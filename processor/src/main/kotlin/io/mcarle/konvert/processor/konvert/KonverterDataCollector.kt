@@ -1,6 +1,7 @@
 package io.mcarle.konvert.processor.konvert
 
 import com.google.devtools.ksp.KspExperimental
+import com.google.devtools.ksp.getAnnotationsByType
 import com.google.devtools.ksp.getClassDeclarationByName
 import com.google.devtools.ksp.isAnnotationPresent
 import com.google.devtools.ksp.isPrivate
@@ -15,6 +16,7 @@ import com.squareup.kotlinpoet.ClassName
 import com.squareup.kotlinpoet.ksp.toTypeName
 import io.mcarle.konvert.api.Konvert
 import io.mcarle.konvert.api.Konverter
+import io.mcarle.konvert.api.NullStrategy
 
 object KonverterDataCollector {
 
@@ -116,7 +118,8 @@ object KonverterDataCollector {
                         sourceParameters = sourceValueParameters,
                         additionalParameters = it.parameters - sourceValueParameters.toSet() - setOfNotNull(targetValueParameter),
                         targetParameter = targetValueParameter,
-                        returnsTarget = targetValueParameter != null && !returnsUnit
+                        returnsTarget = targetValueParameter != null && !returnsUnit,
+                        targetNulls = targetValueParameter?.let(::determineTargetNulls) ?: NullStrategy.DEFAULT
                     )
                 } else {
                     if (annotation != null) {
@@ -127,6 +130,11 @@ object KonverterDataCollector {
                     null
                 }
             }.toList()
+    }
+
+    @OptIn(KspExperimental::class)
+    private fun determineTargetNulls(targetParameter: KSValueParameter): NullStrategy {
+        return targetParameter.getAnnotationsByType(Konverter.Target::class).firstOrNull()?.nulls ?: NullStrategy.DEFAULT
     }
 
     @OptIn(KspExperimental::class)

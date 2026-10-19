@@ -12,6 +12,7 @@ import io.mcarle.konvert.api.DEFAULT_KONVERTER_PRIORITY
 import io.mcarle.konvert.api.Konfig
 import io.mcarle.konvert.api.Konvert
 import io.mcarle.konvert.api.Mapping
+import io.mcarle.konvert.api.NullStrategy
 import io.mcarle.konvert.api.Priority
 import io.mcarle.konvert.converter.api.classDeclaration
 import io.mcarle.konvert.processor.from
@@ -37,6 +38,10 @@ class KonvertData constructor(
      * Only with a [targetParameter]: whether the function returns the target instance instead of `Unit`
      */
     val returnsTarget: Boolean = false,
+    /**
+     * Only with a [targetParameter]: what a `null` source value does, as given by `@Konverter.Target(nulls = ...)`
+     */
+    val targetNulls: NullStrategy = NullStrategy.DEFAULT,
 ) {
 
     val sourceType: KSType = sourceTypeReference.resolve()

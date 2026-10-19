@@ -11,9 +11,12 @@ import com.squareup.kotlinpoet.ParameterSpec
 import com.squareup.kotlinpoet.TypeSpec
 import com.squareup.kotlinpoet.ksp.toTypeName
 import io.mcarle.konvert.api.Konverter
+import io.mcarle.konvert.api.NullStrategy
 import io.mcarle.konvert.converter.api.classDeclaration
 import io.mcarle.konvert.converter.api.config.Configuration
+import io.mcarle.konvert.converter.api.config.UpdateNullStrategy
 import io.mcarle.konvert.converter.api.config.konverterGenerateClass
+import io.mcarle.konvert.converter.api.config.updateNullStrategy
 import io.mcarle.konvert.converter.api.config.withIsolatedConfiguration
 import io.mcarle.konvert.plugin.api.KonverterInjector
 import io.mcarle.konvert.processor.codegen.CodeBuilder
@@ -168,6 +171,11 @@ object KonverterCodeGenerator {
                     updateTarget = UpdateTarget(
                         paramName = konvertData.targetParameter.name!!.asString(),
                         returnsTarget = konvertData.returnsTarget,
+                        nullStrategy = when (konvertData.targetNulls) {
+                            NullStrategy.DEFAULT -> Configuration.updateNullStrategy
+                            NullStrategy.SET -> UpdateNullStrategy.SET
+                            NullStrategy.IGNORE -> UpdateNullStrategy.IGNORE
+                        },
                     ),
                     visibilityContext = visibilityContext,
                     additionalSourceParameters = konvertData.additionalParameters

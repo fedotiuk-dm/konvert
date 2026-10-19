@@ -398,6 +398,189 @@ interface Mapper {
     }
 
     @Test
+    fun `the nulls attribute of the target annotation overrides konfig and the global option`() {
+        val (compilation, result) = compileWith(
+            enabledConverters = listOf(SameTypeConverter()),
+            options = mapOf(UPDATE_NULL_STRATEGY_OPTION.key to UpdateNullStrategy.IGNORE.name),
+            code = SourceFile.kotlin(
+                name = "TestCode.kt",
+                contents =
+                    """
+import io.mcarle.konvert.api.Konfig
+import io.mcarle.konvert.api.Konvert
+import io.mcarle.konvert.api.Konverter
+import io.mcarle.konvert.api.NullStrategy
+
+class Source(val description: String?)
+class Target {
+    var description: String? = "old"
+}
+
+@Konverter(options = [Konfig(key = "${UPDATE_NULL_STRATEGY_OPTION.key}", value = "IGNORE")])
+interface Mapper {
+    fun replace(@Konverter.Source source: Source, @Konverter.Target(nulls = NullStrategy.SET) target: Target)
+
+    @Konvert(options = [Konfig(key = "${UPDATE_NULL_STRATEGY_OPTION.key}", value = "SET")])
+    fun patch(@Konverter.Source source: Source, @Konverter.Target(nulls = NullStrategy.IGNORE) target: Target)
+}
+
+fun runCheck(): String {
+    val patched = Target()
+    MapperImpl.patch(Source(description = null), patched)
+    val replaced = Target()
+    MapperImpl.replace(Source(description = null), replaced)
+    return "${'$'}{patched.description}|${'$'}{replaced.description}"
+}
+                """.trimIndent()
+            )
+        )
+        val mapperCode = compilation.generatedSourceFor("MapperKonverter.kt")
+        println(mapperCode)
+
+        assertSourceEquals(
+            """
+            public object MapperImpl : Mapper {
+              override fun replace(source: Source, target: Target) {
+                target.description = source.description
+              }
+
+              override fun patch(source: Source, target: Target) {
+                source.description?.let {
+                  target.description = it
+                }
+              }
+            }
+            """.trimIndent(),
+            mapperCode
+        )
+        assertEquals("old|null", result.runCheck())
+    }
+
+    @Test
+    fun `the default nulls attribute uses konfig over the global option`() {
+        val (compilation) = compileWith(
+            enabledConverters = listOf(SameTypeConverter()),
+            options = mapOf(UPDATE_NULL_STRATEGY_OPTION.key to UpdateNullStrategy.IGNORE.name),
+            code = SourceFile.kotlin(
+                name = "TestCode.kt",
+                contents =
+                    """
+import io.mcarle.konvert.api.Konfig
+import io.mcarle.konvert.api.Konvert
+import io.mcarle.konvert.api.Konverter
+import io.mcarle.konvert.api.NullStrategy
+
+class Source(val description: String?)
+class Target {
+    var description: String? = null
+}
+
+@Konverter(options = [Konfig(key = "${UPDATE_NULL_STRATEGY_OPTION.key}", value = "SET")])
+interface Mapper {
+    fun replace(@Konverter.Source source: Source, @Konverter.Target(nulls = NullStrategy.DEFAULT) target: Target)
+
+    @Konvert(options = [Konfig(key = "${UPDATE_NULL_STRATEGY_OPTION.key}", value = "IGNORE")])
+    fun patch(@Konverter.Source source: Source, @Konverter.Target target: Target)
+}
+                """.trimIndent()
+            )
+        )
+        val mapperCode = compilation.generatedSourceFor("MapperKonverter.kt")
+        println(mapperCode)
+
+        assertSourceEquals(
+            """
+            public object MapperImpl : Mapper {
+              override fun replace(source: Source, target: Target) {
+                target.description = source.description
+              }
+
+              override fun patch(source: Source, target: Target) {
+                source.description?.let {
+                  target.description = it
+                }
+              }
+            }
+            """.trimIndent(),
+            mapperCode
+        )
+    }
+
+    @Test
+    fun `the default nulls attribute uses the global option without konfig`() {
+        val (compilation) = compileWith(
+            enabledConverters = listOf(SameTypeConverter()),
+            options = mapOf(UPDATE_NULL_STRATEGY_OPTION.key to UpdateNullStrategy.IGNORE.name),
+            code = SourceFile.kotlin(
+                name = "TestCode.kt",
+                contents =
+                    """
+import io.mcarle.konvert.api.Konverter
+import io.mcarle.konvert.api.NullStrategy
+
+class Source(val description: String?)
+class Target {
+    var description: String? = null
+}
+
+@Konverter
+interface Mapper {
+    fun patch(@Konverter.Source source: Source, @Konverter.Target(nulls = NullStrategy.DEFAULT) target: Target)
+}
+                """.trimIndent()
+            )
+        )
+
+        assertSourceEquals(
+            """
+            public object MapperImpl : Mapper {
+              override fun patch(source: Source, target: Target) {
+                source.description?.let {
+                  target.description = it
+                }
+              }
+            }
+            """.trimIndent(),
+            compilation.generatedSourceFor("MapperKonverter.kt")
+        )
+    }
+
+    @Test
+    fun `without the nulls attribute, konfig and the global option a null is set`() {
+        val (compilation) = compileWith(
+            enabledConverters = listOf(SameTypeConverter()),
+            code = SourceFile.kotlin(
+                name = "TestCode.kt",
+                contents =
+                    """
+import io.mcarle.konvert.api.Konverter
+
+class Source(val description: String?)
+class Target {
+    var description: String? = null
+}
+
+@Konverter
+interface Mapper {
+    fun replace(@Konverter.Source source: Source, @Konverter.Target target: Target)
+}
+                """.trimIndent()
+            )
+        )
+
+        assertSourceEquals(
+            """
+            public object MapperImpl : Mapper {
+              override fun replace(source: Source, target: Target) {
+                target.description = source.description
+              }
+            }
+            """.trimIndent(),
+            compilation.generatedSourceFor("MapperKonverter.kt")
+        )
+    }
+
+    @Test
     fun `a nullable source leaves the target untouched when it is null`() {
         val (compilation, result) = compileWith(
             enabledConverters = listOf(SameTypeConverter()),

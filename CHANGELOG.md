@@ -16,8 +16,8 @@ All notable changes to this project will be documented in this file.
    * assigns every mapped `var` and Java setter in place; a `val` holding a non-null mutable collection or map gets its content replaced
    * mapping a read-only target property explicitly fails the build, an implicit match is skipped
    * new option `konvert.update-null-strategy`: `SET` (default) assigns `null` values, `IGNORE` leaves a target property untouched when its source value is `null`
+   * per function with `@Konverter.Target(nulls = NullStrategy.SET | IGNORE)`, which takes precedence over `Konfig` and the global option (`NullStrategy.DEFAULT` uses them)
    * several `@Konverter.Source` parameters map into one `@Konverter.Target` instance; `konvert.unmapped-target-policy` and `konvert.ignored-target-policy` report its properties as they report constructor parameters
-
 
 ## [4.5.1]
 

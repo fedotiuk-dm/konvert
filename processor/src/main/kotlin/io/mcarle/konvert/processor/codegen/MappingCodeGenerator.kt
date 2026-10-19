@@ -18,7 +18,6 @@ import io.mcarle.konvert.converter.api.config.UpdateNullStrategy
 import io.mcarle.konvert.converter.api.config.enableConverters
 import io.mcarle.konvert.converter.api.config.enforceNotNull
 import io.mcarle.konvert.converter.api.config.enforceNotNullStrategy
-import io.mcarle.konvert.converter.api.config.updateNullStrategy
 import io.mcarle.konvert.converter.api.isNullable
 import io.mcarle.konvert.processor.exceptions.IgnoredTargetNotIgnorableException
 import io.mcarle.konvert.processor.exceptions.NoMatchingTypeConverterException
@@ -97,7 +96,7 @@ class MappingCodeGenerator constructor(
         val propertyCodeBlocks = targetProperties.mapNotNull { targetProperty ->
             val sourceProperty = determinePropertyMappingInfo(sourceProperties, targetProperty)
             val content = replaceableContent(targetProperty)
-            updateCode(sourceProperty, targetProperty.type, additionalSourceParameters) { value ->
+            updateCode(sourceProperty, targetProperty.type, additionalSourceParameters, updateTarget.nullStrategy) { value ->
                 if (content == null) {
                     CodeBlock.of("$target.${sourceProperty.targetName}·=·%L", value)
                 } else {
@@ -107,7 +106,7 @@ class MappingCodeGenerator constructor(
         }
         val setterCodeBlocks = targetSetters.mapNotNull { targetSetter ->
             val sourceProperty = determinePropertyMappingInfo(sourceProperties, targetSetter)
-            updateCode(sourceProperty, targetSetter.typeRef, additionalSourceParameters) { value ->
+            updateCode(sourceProperty, targetSetter.typeRef, additionalSourceParameters, updateTarget.nullStrategy) { value ->
                 CodeBlock.of("$target.%L", targetSetter.generateAssignmentCode(value))
             }
         }
@@ -133,18 +132,19 @@ class MappingCodeGenerator constructor(
         source: PropertyMappingInfo,
         targetTypeRef: KSTypeReference,
         additionalSourceParameters: List<KSValueParameter>,
+        nullStrategy: UpdateNullStrategy,
         assign: (CodeBlock) -> CodeBlock
     ): CodeBlock? {
         if (source.ignore) return null
 
-        if (Configuration.updateNullStrategy == UpdateNullStrategy.IGNORE && source.constant == null && source.expression == null) {
+        if (nullStrategy == UpdateNullStrategy.IGNORE && source.constant == null && source.expression == null) {
             val sourceAccess = sourceAccess(source)
             if (sourceAccess != null && sourceAccess.type.isNullable()) {
                 val value = convertFrom(source, "it", sourceAccess.type.makeNotNullable(), targetTypeRef.resolve())
                 return CodeBlock.of("${sourceAccess.code}?.let·{\n⇥%L⇤\n}", assign(value))
             }
         }
-        if (Configuration.updateNullStrategy == UpdateNullStrategy.IGNORE && source.sourceData == null && source.constant != null) {
+        if (nullStrategy == UpdateNullStrategy.IGNORE && source.sourceData == null && source.constant != null) {
             val parameter = additionalSourceParameters.firstOrNull { it.name?.asString() == source.constant }
             if (parameter != null && parameter.type.resolve().isNullable()) {
                 return CodeBlock.of("${source.constant}?.let·{\n⇥%L⇤\n}", assign(CodeBlock.of("it")))

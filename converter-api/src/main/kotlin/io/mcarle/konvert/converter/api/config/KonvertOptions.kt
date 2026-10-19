@@ -210,6 +210,8 @@ object IGNORED_TARGET_POLICY_OPTION : Option<IgnoredTargetPolicy>(
  * - "set" (default): assign the value, including `null` into a nullable target property
  * - "ignore": a `null` source value leaves the target property untouched
  *
+ * `@Konverter.Target(nulls = ...)` other than `NullStrategy.DEFAULT` takes precedence over this option.
+ *
  * @see UpdateNullStrategy
  * @since 4.6.0
  */
