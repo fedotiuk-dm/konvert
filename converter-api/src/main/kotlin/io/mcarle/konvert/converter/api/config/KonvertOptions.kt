@@ -157,3 +157,19 @@ object INVALID_MAPPING_STRATEGY_OPTION : Option<InvalidMappingStrategy>(
     key = "konvert.invalid-mapping-strategy",
     defaultValue = InvalidMappingStrategy.WARN
 )
+
+/**
+ * Controls how a function mapping into an existing instance (a parameter annotated with `@Konverter.Target`)
+ * handles a `null` source value.
+ *
+ * Possible values:
+ * - "set" (default): assign the value, including `null` into a nullable target property
+ * - "ignore": a `null` source value leaves the target property untouched
+ *
+ * @see UpdateNullStrategy
+ * @since 4.6.0
+ */
+object UPDATE_NULL_STRATEGY_OPTION : Option<UpdateNullStrategy>(
+    key = "konvert.update-null-strategy",
+    defaultValue = UpdateNullStrategy.SET
+)

@@ -23,7 +23,16 @@ class KonvertData constructor(
     val sourceTypeReference: KSTypeReference,
     val targetTypeReference: KSTypeReference,
     val mapKSFunctionDeclaration: KSFunctionDeclaration,
-    val additionalParameters: List<KSValueParameter>
+    val additionalParameters: List<KSValueParameter>,
+    /**
+     * The parameter annotated with `@Konverter.Target` holding the instance to map into, `null` when a new instance is
+     * constructed and returned
+     */
+    val targetParameter: KSValueParameter? = null,
+    /**
+     * Only with a [targetParameter]: whether the function returns the target instance instead of `Unit`
+     */
+    val returnsTarget: Boolean = false,
 ) {
 
     val sourceType: KSType = sourceTypeReference.resolve()
@@ -31,7 +40,14 @@ class KonvertData constructor(
     val targetType: KSType = targetTypeReference.resolve()
     val targetClassDeclaration: KSClassDeclaration = targetType.classDeclaration()!!
     val mapFunctionName: String = mapKSFunctionDeclaration.simpleName.asString()
-    val paramName: String = (mapKSFunctionDeclaration.parameters - additionalParameters).first().name!!.asString()
+    val paramName: String = (mapKSFunctionDeclaration.parameters - additionalParameters - listOfNotNull(targetParameter).toSet())
+        .first().name!!.asString()
+
+    /**
+     * Maps into the existing instance of [targetParameter]. As the caller supplies that instance, such a function is
+     * not offered as a type converter.
+     */
+    val isUpdate: Boolean = targetParameter != null
 
     val priority = annotationData.priority
 

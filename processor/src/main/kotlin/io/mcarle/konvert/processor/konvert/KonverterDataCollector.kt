@@ -60,13 +60,31 @@ object KonverterDataCollector {
                     return@mapNotNull null
                 }
 
-                val sourceValueParameter = determineSourceParam(it, logger)
+                val targetValueParameters = determineTargetParams(it)
+                if (targetValueParameters.size > 1) {
+                    logger.error("Ignored method as multiple parameters were annotated with @Konverter.Target", it)
+                    return@mapNotNull null
+                }
+                val targetValueParameter = targetValueParameters.firstOrNull()
+                val sourceValueParameter = determineSourceParam(it, targetValueParameter, logger)
                 val source = sourceValueParameter?.type
-                val target = it.returnType?.let { returnType ->
-                    if (returnType.resolve().declaration == resolver.getClassDeclarationByName<Unit>()) {
-                        null
-                    } else {
-                        returnType
+                val returnsUnit = it.returnType?.resolve()?.declaration.let { declaration ->
+                    declaration == null || declaration == resolver.getClassDeclarationByName<Unit>()
+                }
+                val target = if (targetValueParameter != null) {
+                    targetValueParameter.type
+                } else {
+                    it.returnType?.takeUnless { returnsUnit }
+                }
+
+                if (targetValueParameter != null) {
+                    if (!it.isAbstract) {
+                        // an implemented update function is not a type converter, so there is nothing to generate
+                        logger.logging("Ignoring implemented function mapping into a @Konverter.Target parameter", it)
+                        return@mapNotNull null
+                    }
+                    if (!isValidUpdateFunction(it, targetValueParameter, returnsUnit, logger)) {
+                        return@mapNotNull null
                     }
                 }
 
@@ -96,6 +114,9 @@ object KonverterDataCollector {
                         targetTypeReference = target,
                         mapKSFunctionDeclaration = it,
                         additionalParameters = determineAdditionalParams(it, sourceValueParameter)
+                            .filterNot { parameter -> parameter == targetValueParameter },
+                        targetParameter = targetValueParameter,
+                        returnsTarget = targetValueParameter != null && !returnsUnit
                     )
                 } else {
                     if (annotation != null) {
@@ -109,8 +130,43 @@ object KonverterDataCollector {
     }
 
     @OptIn(KspExperimental::class)
-    private fun determineSourceParam(function: KSFunctionDeclaration, logger: KSPLogger): KSValueParameter? {
-        val parameters = function.parameters
+    private fun determineTargetParams(function: KSFunctionDeclaration): List<KSValueParameter> {
+        return function.parameters.filter { it.isAnnotationPresent(Konverter.Target::class) }
+    }
+
+    /**
+     * A function mapping into a `@Konverter.Target` parameter returns `Unit` or that very instance, which must not be null.
+     */
+    private fun isValidUpdateFunction(
+        function: KSFunctionDeclaration,
+        targetParameter: KSValueParameter,
+        returnsUnit: Boolean,
+        logger: KSPLogger
+    ): Boolean {
+        val targetType = targetParameter.type.resolve()
+        if (targetType.isMarkedNullable) {
+            logger.error("The @Konverter.Target parameter '${targetParameter.name?.asString()}' must not be nullable", function)
+            return false
+        }
+        val returnType = function.returnType?.resolve()
+        if (!returnsUnit && (returnType == null || !returnType.isAssignableFrom(targetType))) {
+            logger.error(
+                "A function with a @Konverter.Target parameter must return Unit or the type of that parameter " +
+                    "(${targetType.declaration.qualifiedName?.asString()}), but returns $returnType",
+                function
+            )
+            return false
+        }
+        return true
+    }
+
+    @OptIn(KspExperimental::class)
+    private fun determineSourceParam(
+        function: KSFunctionDeclaration,
+        targetParameter: KSValueParameter?,
+        logger: KSPLogger
+    ): KSValueParameter? {
+        val parameters = function.parameters.filterNot { it == targetParameter }
         return when {
             parameters.isEmpty() -> null
             parameters.size > 1 -> {

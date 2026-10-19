@@ -31,8 +31,28 @@ annotation class Konverter(
 ) {
 
     @Retention(AnnotationRetention.RUNTIME)
-    @Target(AnnotationTarget.VALUE_PARAMETER)
+    @kotlin.annotation.Target(AnnotationTarget.VALUE_PARAMETER)
     annotation class Source
+
+    /**
+     * Marks the parameter holding an existing instance to map into, instead of constructing a new one.
+     *
+     * The function returns `Unit` or the type of this parameter, in which case the very same instance is returned.
+     * Every mapped target property must be assignable: a `var`, a Java setter, or a `val` holding a non-null mutable
+     * collection or map, whose content is replaced. Target properties without a source keep their value.
+     *
+     * ```kotlin
+     * @Konverter
+     * interface PersonMapper {
+     *     fun update(@Konverter.Source dto: PersonDto, @Konverter.Target entity: PersonEntity)
+     * }
+     * ```
+     *
+     * Whether a `null` source value overwrites the target property is decided by the option `konvert.update-null-strategy`.
+     */
+    @Retention(AnnotationRetention.RUNTIME)
+    @kotlin.annotation.Target(AnnotationTarget.VALUE_PARAMETER)
+    annotation class Target
 
     /**
      * This object can be used to load the generated class of an interface, which is annotated with `@Konverter`.
