@@ -27,13 +27,14 @@ class SealedClassMappingCodeGenerator(
      * subclass has a converter of its own to it.
      */
     fun isApplicable(context: MappingContext): Boolean {
-        return context.sourceClassDeclaration.isSealed()
-            && TypeConverterRegistry.none { it !is AnnotatedConverter && it.matches(context.source, context.target) }
+        val source = context.sources.singleOrNull() ?: return false
+        return source.classDeclaration.isSealed()
+            && TypeConverterRegistry.none { it !is AnnotatedConverter && it.matches(source.type, context.target) }
             && (context.targetClassDeclaration.isSealed() || everySubclassHasOwnConverter(context))
     }
 
     private fun everySubclassHasOwnConverter(context: MappingContext): Boolean {
-        val subclasses = context.sourceClassDeclaration.getSealedSubclasses().toList()
+        val subclasses = context.sources.single().classDeclaration.getSealedSubclasses().toList()
         return subclasses.isNotEmpty() && subclasses.all { ownConverter(it, context) != null }
     }
 
@@ -41,7 +42,7 @@ class SealedClassMappingCodeGenerator(
     private fun ownConverter(subclass: KSClassDeclaration, context: MappingContext) =
         TypeConverterRegistry.firstOrNull {
             it.matches(subclass.asStarProjectedType(), context.target)
-                && !it.matches(context.sourceClassDeclaration.asStarProjectedType(), context.target)
+                && !it.matches(context.sources.single().classDeclaration.asStarProjectedType(), context.target)
         }
 
     fun generateCode(
@@ -51,7 +52,8 @@ class SealedClassMappingCodeGenerator(
         visibilityContext: MappingVisibilityContext,
         additionalSourceParameters: List<KSValueParameter>
     ): CodeBlock {
-        val source = context.sourceClassDeclaration
+        val mappingSource = context.sources.single()
+        val source = mappingSource.classDeclaration
         val target = context.targetClassDeclaration
         if (source.typeParameters.isNotEmpty() || target.typeParameters.isNotEmpty()) {
             throw SealedClassMappingException.genericTypes(source, target)
@@ -60,11 +62,11 @@ class SealedClassMappingCodeGenerator(
         if (mappings.isNotEmpty() || !defaultConstructor) {
             throw SealedClassMappingException.mappingsNotSupported(source, target)
         }
-        if (context.source.isNullable() && !context.target.isNullable()) {
+        if (mappingSource.type.isNullable() && !context.target.isNullable()) {
             throw SealedClassMappingException.nullableSourceToNotNullTarget(source, target)
         }
 
-        val paramName = requireNotNull(context.paramName)
+        val paramName = requireNotNull(mappingSource.paramName)
         val branches = if (target.isSealed()) {
             branches(source, target, context, enforcedConstructorTypes, visibilityContext, additionalSourceParameters)
         } else {
@@ -76,7 +78,7 @@ class SealedClassMappingCodeGenerator(
 
         return CodeBlock.builder()
             .add("return·when·(%L)·{\n⇥", paramName)
-            .apply { if (context.source.isNullable()) add("null·->·null\n") }
+            .apply { if (mappingSource.type.isNullable()) add("null·->·null\n") }
             .apply { branches.forEach { add("is·%T·->·%L\n", it.source.toClassName(), it.code) } }
             .add("⇤}")
             .build()
@@ -118,7 +120,7 @@ class SealedClassMappingCodeGenerator(
             val converter = TypeConverterRegistry.firstOrNull { it.matches(sourceType, targetType) }
             when {
                 converter != null -> listOf(
-                    Branch(sourceSubclass, converter.convert(context.paramName!!, sourceType, targetType))
+                    Branch(sourceSubclass, converter.convert(context.sources.single().paramName!!, sourceType, targetType))
                 )
 
                 targetSubclass.classKind == ClassKind.OBJECT -> listOf(
@@ -135,11 +137,15 @@ class SealedClassMappingCodeGenerator(
                             mappings = emptyList(),
                             enforcedConstructorTypes = enforcedConstructorTypes,
                             context = MappingContext(
-                                sourceClassDeclaration = sourceSubclass,
+                                sources = listOf(
+                                    MappingSource(
+                                        classDeclaration = sourceSubclass,
+                                        type = sourceType,
+                                        paramName = context.sources.single().paramName,
+                                    )
+                                ),
                                 targetClassDeclaration = targetSubclass,
-                                source = sourceType,
                                 target = targetType,
-                                paramName = context.paramName,
                                 targetClassImportName = null,
                                 functionName = context.functionName,
                                 asExpression = true,

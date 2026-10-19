@@ -8,6 +8,10 @@ All notable changes to this project will be documented in this file.
 * New option `konvert.unmapped-target-policy` (`ignore`, `warn`, `error`) to report a target constructor parameter that no source property and no mapping provides, instead of silently leaving it to its default value
 * `@Konverter` functions map sealed hierarchies: if source and target are sealed, an exhaustive `when` pairs the subclasses through a declared converter or by their simple name [#216](https://github.com/mcarleio/konvert/issues/216)
 * New option `konvert.ignored-target-policy` (`ignore`, `warn`, `error`) to report a target excluded with `@Mapping(ignore = true)` that a source property or parameter would map to by name, instead of silently dropping its value
+* Map several sources into one target by annotating several parameters of a `@Konverter` function with `@Konverter.Source` [#71](https://github.com/mcarleio/konvert/issues/71)
+   * target properties are matched by name against the properties of all sources; a property found in several sources is a compile error unless a `@Mapping` decides it
+   * `Mapping.source` may be qualified by the parameter name and navigate nested properties, e.g. `Mapping(target = "city", source = "entity.customer.address.city")`, reading null-safely after a nullable step
+   * source properties are converted with the registered type converters, nullable source parameters are read with `?.`
 
 
 ## [4.5.1]
