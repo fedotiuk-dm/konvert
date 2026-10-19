@@ -15,10 +15,12 @@ import io.mcarle.konvert.converter.api.TypeConverterRegistry
 import io.mcarle.konvert.converter.api.config.Configuration
 import io.mcarle.konvert.converter.api.config.EnforceNotNullStrategy
 import io.mcarle.konvert.converter.api.config.UnmappedTargetPolicy
+import io.mcarle.konvert.converter.api.config.UpdateNullStrategy
 import io.mcarle.konvert.converter.api.config.enableConverters
 import io.mcarle.konvert.converter.api.config.enforceNotNull
 import io.mcarle.konvert.converter.api.config.enforceNotNullStrategy
 import io.mcarle.konvert.converter.api.config.unmappedTargetPolicy
+import io.mcarle.konvert.converter.api.config.updateNullStrategy
 import io.mcarle.konvert.converter.api.isNullable
 import io.mcarle.konvert.processor.exceptions.IgnoredTargetNotIgnorableException
 import io.mcarle.konvert.processor.exceptions.NoMatchingTypeConverterException
@@ -80,6 +82,100 @@ class MappingCodeGenerator constructor(
         } else {
             CodeBlock.of(if (context.asExpression) "%L%L" else "return·%L%L", constructorCode, propertyCode)
         }
+    }
+
+    /**
+     * Writes into the existing instance of [updateTarget] property by property, see [CodeGenerator.generateUpdateCode].
+     */
+    fun generateUpdateCode(
+        context: MappingContext,
+        updateTarget: UpdateTarget,
+        sourceProperties: List<PropertyMappingInfo>,
+        targetProperties: List<KSPropertyDeclaration>,
+        targetSetters: List<TargetSetter>,
+        additionalSourceParameters: List<KSValueParameter>,
+        replaceableContent: (KSPropertyDeclaration) -> ReplaceableContent?
+    ): CodeBlock {
+        val target = updateTarget.paramName
+        val propertyCodeBlocks = targetProperties.mapNotNull { targetProperty ->
+            val sourceProperty = determinePropertyMappingInfo(sourceProperties, targetProperty)
+            val content = replaceableContent(targetProperty)
+            updateCode(sourceProperty, targetProperty.type, additionalSourceParameters) { value ->
+                if (content == null) {
+                    CodeBlock.of("$target.${sourceProperty.targetName}·=·%L", value)
+                } else {
+                    replaceContentCode("$target.${sourceProperty.targetName}", content, value, target)
+                }
+            }
+        }
+        val setterCodeBlocks = targetSetters.mapNotNull { targetSetter ->
+            val sourceProperty = determinePropertyMappingInfo(sourceProperties, targetSetter)
+            updateCode(sourceProperty, targetSetter.typeRef, additionalSourceParameters) { value ->
+                CodeBlock.of("$target.%L", targetSetter.generateAssignmentCode(value))
+            }
+        }
+        val assignments = propertyCodeBlocks + setterCodeBlocks
+
+        // several sources are each read null-safely, see SourcePath
+        val nullableSource = context.sources.singleOrNull()?.takeIf { it.type.isNullable() }
+        val body = when {
+            assignments.isEmpty() -> null
+            // a null source leaves the target untouched
+            nullableSource != null -> CodeBlock.of("if·(${nullableSource.paramName!!}·!=·null)·{\n⇥%L⇤\n}", assignments.joinToCode("\n"))
+            else -> assignments.joinToCode("\n")
+        }
+        val returnCode = CodeBlock.of("return·$target").takeIf { updateTarget.returnsTarget }
+        return listOfNotNull(body, returnCode).joinToCode("\n")
+    }
+
+    /**
+     * With [UpdateNullStrategy.IGNORE], a nullable value read from a source property or a parameter is only assigned
+     * when it is not null. Constants and expressions are assigned as written.
+     */
+    private fun updateCode(
+        source: PropertyMappingInfo,
+        targetTypeRef: KSTypeReference,
+        additionalSourceParameters: List<KSValueParameter>,
+        assign: (CodeBlock) -> CodeBlock
+    ): CodeBlock? {
+        if (source.ignore) return null
+
+        if (Configuration.updateNullStrategy == UpdateNullStrategy.IGNORE && source.constant == null && source.expression == null) {
+            val sourceAccess = sourceAccess(source)
+            if (sourceAccess != null && sourceAccess.type.isNullable()) {
+                val value = convertFrom(source, "it", sourceAccess.type.makeNotNullable(), targetTypeRef.resolve())
+                return CodeBlock.of("${sourceAccess.code}?.let·{\n⇥%L⇤\n}", assign(value))
+            }
+        }
+        if (Configuration.updateNullStrategy == UpdateNullStrategy.IGNORE && source.sourceData == null && source.constant != null) {
+            val parameter = additionalSourceParameters.firstOrNull { it.name?.asString() == source.constant }
+            if (parameter != null && parameter.type.resolve().isNullable()) {
+                return CodeBlock.of("${source.constant}?.let·{\n⇥%L⇤\n}", assign(CodeBlock.of("it")))
+            }
+        }
+
+        return convertValue(
+            source = source,
+            targetTypeRef = targetTypeRef,
+            valueParamIsNullable = false,
+            valueParamHasDefault = true
+        )?.let(assign)
+    }
+
+    /**
+     * Replaces the content of the collection or map a `val` holds. A value that is that very instance is left alone,
+     * as clearing it first would lose its content.
+     */
+    private fun replaceContentCode(access: String, content: ReplaceableContent, value: CodeBlock, targetParamName: String): CodeBlock {
+        val propertyName = access.substringAfterLast('.')
+        var valueName = "new" + propertyName.replaceFirstChar { it.uppercase(Locale.getDefault()) }
+        while (valueName == targetParamName) {
+            valueName += "0"
+        }
+        return CodeBlock.of(
+            "(%L).let·{·$valueName·->\n⇥if·($valueName·!==·$access)·{\n⇥$access.clear()\n$access.${content.addAllFunction}($valueName)⇤\n}⇤\n}",
+            value
+        )
     }
 
     private fun constructorCode(
@@ -347,11 +443,31 @@ $className(${"⇥\n%L"}
         source: PropertyMappingInfo,
         targetType: KSType
     ): CodeBlock {
-        val sourceData = source.sourceData!!
-        val sourceType = source.sourcePath?.type ?: sourceData.typeRef.resolve()
-        val paramName = source.mappingParamName?.let { "$it." } ?: ""
-        val sourceAccessCode = source.sourcePath?.code ?: (paramName + sourceData.accessCode)
+        val sourceAccess = sourceAccess(source)!!
+        return convertFrom(source, sourceAccess.code, sourceAccess.type, targetType)
+    }
 
+    /**
+     * The code reading the value of [source] from its source object, and the type of that value
+     */
+    private fun sourceAccess(source: PropertyMappingInfo): SourceAccess? {
+        val sourceData = source.sourceData ?: return null
+        val paramName = source.mappingParamName?.let { "$it." } ?: ""
+        return SourceAccess(
+            code = source.sourcePath?.code ?: (paramName + sourceData.accessCode),
+            type = source.sourcePath?.type ?: sourceData.typeRef.resolve()
+        )
+    }
+
+    private data class SourceAccess(val code: String, val type: KSType)
+
+    private fun convertFrom(
+        source: PropertyMappingInfo,
+        sourceAccessCode: String,
+        sourceType: KSType,
+        targetType: KSType
+    ): CodeBlock {
+        val paramName = source.mappingParamName?.let { "$it." } ?: ""
         return TypeConverterRegistry.withAdditionallyEnabledConverters(source.enableConverters + Configuration.enableConverters) {
             firstOrNull { it.matches(sourceType, targetType) }
                 ?.convert(sourceAccessCode, sourceType, targetType)

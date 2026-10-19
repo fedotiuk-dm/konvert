@@ -99,6 +99,15 @@ val Configuration.Companion.ignoredTargetPolicy: IgnoredTargetPolicy
     }
 
 /**
+ * @see UPDATE_NULL_STRATEGY_OPTION
+ */
+val Configuration.Companion.updateNullStrategy: UpdateNullStrategy
+    get() = UPDATE_NULL_STRATEGY_OPTION.get(CURRENT) { configString ->
+        UpdateNullStrategy.entries.firstOrNull { it.name.equals(configString, ignoreCase = true) }
+            ?: UPDATE_NULL_STRATEGY_OPTION.defaultValue
+    }
+
+/**
  * Reads the value for [Option.key] from the provided `options` or fallbacks to the [Option.defaultValue].
  */
 inline fun <T> Option<T>.get(configuration: Configuration, mapping: (String) -> T): T {

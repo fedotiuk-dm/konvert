@@ -22,6 +22,7 @@ import io.mcarle.konvert.processor.codegen.MappingContext
 import io.mcarle.konvert.processor.codegen.MappingSource
 import io.mcarle.konvert.processor.codegen.MappingVisibilityContext
 import io.mcarle.konvert.processor.codegen.SealedClassMappingCodeGenerator
+import io.mcarle.konvert.processor.codegen.UpdateTarget
 import io.mcarle.konvert.processor.exceptions.KonvertException
 import io.mcarle.konvert.processor.validated
 import java.util.ServiceLoader
@@ -71,7 +72,13 @@ object KonverterCodeGenerator {
                         codeBuilder.addFunction(
                             funBuilder = FunSpec.builder(konvertData.mapFunctionName)
                                 .addModifiers(KModifier.OVERRIDE)
-                                .returns(konvertData.targetTypeReference.toTypeName())
+                                .apply {
+                                    if (!konvertData.isUpdate) {
+                                        returns(konvertData.targetTypeReference.toTypeName())
+                                    } else if (konvertData.returnsTarget) {
+                                        returns(konvertData.mapKSFunctionDeclaration.returnType!!.toTypeName())
+                                    }
+                                }
                                 .addParameters(konvertData.mapKSFunctionDeclaration.parameters.map {
                                     val builder = ParameterSpec.builder(
                                         name = it.name!!.asString(),
@@ -153,6 +160,20 @@ object KonverterCodeGenerator {
         )
         val visibilityContext = MappingVisibilityContext.Declaration(konvertData.mapKSFunctionDeclaration)
         val sealedMapper = SealedClassMappingCodeGenerator(mapper)
+        if (konvertData.targetParameter != null) {
+            return addCode(
+                mapper.generateUpdateCode(
+                    mappings = mappings,
+                    context = context,
+                    updateTarget = UpdateTarget(
+                        paramName = konvertData.targetParameter.name!!.asString(),
+                        returnsTarget = konvertData.returnsTarget,
+                    ),
+                    visibilityContext = visibilityContext,
+                    additionalSourceParameters = konvertData.additionalParameters
+                )
+            )
+        }
         return addCode(
             if (sealedMapper.isApplicable(context)) {
                 sealedMapper.generateCode(
@@ -204,7 +225,7 @@ object KonverterCodeGenerator {
 
     fun toFunctionFullyQualifiedNames(data: KonverterData): List<String> {
         return data.konvertData
-            .filter { it.additionalParameters.isEmpty() && !it.hasMultipleSources } // filter out mappings with more than one parameter
+            .filter { it.additionalParameters.isEmpty() && !it.hasMultipleSources && !it.isUpdate } // filter out mappings with more than one parameter
             .map {
                 val packageName = data.konverterInterface.packageName
                 val simpleName = data.konverterInterface.simpleName + Konverter.KONVERTER_GENERATED_CLASS_SUFFIX

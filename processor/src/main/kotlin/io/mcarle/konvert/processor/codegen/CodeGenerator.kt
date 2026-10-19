@@ -14,16 +14,20 @@ import io.mcarle.konvert.converter.api.config.IgnoredTargetPolicy
 import io.mcarle.konvert.converter.api.config.InvalidMappingStrategy
 import io.mcarle.konvert.converter.api.config.NON_CONSTRUCTOR_PROPERTIES_MAPPING_OPTION
 import io.mcarle.konvert.converter.api.config.NonConstructorPropertiesMapping
+import io.mcarle.konvert.converter.api.config.UnmappedTargetPolicy
 import io.mcarle.konvert.converter.api.config.enableConverters
 import io.mcarle.konvert.converter.api.config.ignoredTargetPolicy
 import io.mcarle.konvert.converter.api.config.invalidMappingStrategy
 import io.mcarle.konvert.converter.api.config.nonConstructorPropertiesMapping
+import io.mcarle.konvert.converter.api.config.unmappedTargetPolicy
 import io.mcarle.konvert.converter.api.isNullable
 import io.mcarle.konvert.processor.AnnotatedConverter
 import io.mcarle.konvert.processor.exceptions.AmbiguousSourceException
 import io.mcarle.konvert.processor.exceptions.IgnoredTargetException
 import io.mcarle.konvert.processor.exceptions.InvalidMappingException
+import io.mcarle.konvert.processor.exceptions.NotAssignableTargetException
 import io.mcarle.konvert.processor.exceptions.PropertyMappingNotExistingException
+import io.mcarle.konvert.processor.exceptions.UnmappedTargetException
 import io.mcarle.konvert.processor.sourcedata.DefaultSourceDataExtractionStrategy
 import io.mcarle.konvert.processor.sourcedata.SourceDataExtractionStrategy
 import io.mcarle.konvert.processor.targetdata.DefaultTargetDataExtractionStrategy
@@ -61,32 +65,7 @@ class CodeGenerator constructor(
 
         val targetData = targetDataExtractionStrategy.extract(resolver, context.targetClassDeclaration, visibilityContext)
 
-        val sourceDataLists = context.sources.map {
-            sourceDataExtractionStrategy.extract(resolver, it.classDeclaration, visibilityContext)
-        }
-        val sourceDataList = sourceDataLists.flatten()
-
-        val sourceProperties = if (singleSource != null) {
-            PropertyMappingResolver(logger).determinePropertyMappings(
-                mappingParamName = singleSource.paramName,
-                mappings = mappings,
-                additionalSourceParameters = additionalSourceParameters,
-                sourceDataList = sourceDataList
-            )
-        } else {
-            PropertyMappingResolver(logger).determinePropertyMappings(
-                sources = context.sources.zip(sourceDataLists) { source, sourceData ->
-                    PropertyMappingResolver.SourceWithData(
-                        paramName = requireNotNull(source.paramName) { "Every one of several sources must be a parameter" },
-                        type = source.type,
-                        sourceDataList = sourceData
-                    )
-                },
-                mappings = mappings,
-                additionalSourceParameters = additionalSourceParameters,
-                extractSourceData = { sourceDataExtractionStrategy.extract(resolver, it, visibilityContext) }
-            )
-        }
+        val (sourceDataList, sourceProperties) = resolveSources(mappings, context, visibilityContext, additionalSourceParameters)
 
         val constructor = ConstructorResolver.determineConstructor(
             targetData = targetData,
@@ -143,6 +122,176 @@ class CodeGenerator constructor(
             variablesWithoutConstructorParameters.map { it.property },
             remainingSetters.toList()
         )
+    }
+
+    private data class ResolvedSources(
+        val sourceDataList: List<SourceDataExtractionStrategy.SourceData>,
+        val sourceProperties: List<PropertyMappingInfo>,
+    )
+
+    private fun resolveSources(
+        mappings: List<Mapping>,
+        context: MappingContext,
+        visibilityContext: MappingVisibilityContext,
+        additionalSourceParameters: List<KSValueParameter>
+    ): ResolvedSources {
+        val sourceDataLists = context.sources.map {
+            sourceDataExtractionStrategy.extract(resolver, it.classDeclaration, visibilityContext)
+        }
+        val sourceDataList = sourceDataLists.flatten()
+
+        val singleSource = context.sources.singleOrNull()
+        val sourceProperties = if (singleSource != null) {
+            PropertyMappingResolver(logger).determinePropertyMappings(
+                mappingParamName = singleSource.paramName,
+                mappings = mappings,
+                additionalSourceParameters = additionalSourceParameters,
+                sourceDataList = sourceDataList
+            )
+        } else {
+            PropertyMappingResolver(logger).determinePropertyMappings(
+                sources = context.sources.zip(sourceDataLists) { source, sourceData ->
+                    PropertyMappingResolver.SourceWithData(
+                        paramName = requireNotNull(source.paramName) { "Every one of several sources must be a parameter" },
+                        type = source.type,
+                        sourceDataList = sourceData
+                    )
+                },
+                mappings = mappings,
+                additionalSourceParameters = additionalSourceParameters,
+                extractSourceData = { sourceDataExtractionStrategy.extract(resolver, it, visibilityContext) }
+            )
+        }
+        return ResolvedSources(sourceDataList, sourceProperties)
+    }
+
+    /**
+     * Generates the statements writing into the existing instance of [updateTarget] instead of constructing a new one.
+     * Only assignable target properties are written: a `var`, a setter, or a `val` whose mutable collection or map
+     * gets its content replaced. A target without a source keeps its value.
+     */
+    fun generateUpdateCode(
+        mappings: List<Mapping>,
+        context: MappingContext,
+        updateTarget: UpdateTarget,
+        visibilityContext: MappingVisibilityContext,
+        additionalSourceParameters: List<KSValueParameter>
+    ): CodeBlock {
+        val extractedTargetData = targetDataExtractionStrategy.extract(resolver, context.targetClassDeclaration, visibilityContext)
+
+        val readOnlyProperties = context.targetClassDeclaration.getAllProperties()
+            .filter { it.extensionReceiver == null }
+            .filter { it.isVisibleFrom(visibilityContext) }
+            .filterNot { it.isMutable }
+            .toList()
+        val replaceableProperties = readOnlyProperties.filter { ReplaceableContent.of(it, resolver) != null }
+        val notAssignableNames = (readOnlyProperties - replaceableProperties.toSet()).map { it.simpleName.asString() }
+
+        val notAssignableMappings = mappings.filter { !it.ignore && it.target in notAssignableNames }
+        if (notAssignableMappings.isNotEmpty()) {
+            throw NotAssignableTargetException(notAssignableMappings.map { it.target })
+        }
+
+        val targetData = extractedTargetData.copy(
+            varProperties = extractedTargetData.varProperties
+                + replaceableProperties.map { TargetDataExtractionStrategy.TargetVarProperty(it) }
+        )
+
+        val (sourceDataList, sourceProperties) = resolveSources(mappings, context, visibilityContext, additionalSourceParameters)
+
+        verifyTargetExists(mappings, emptyList(), targetData.varProperties, targetData.setter)
+
+        reportIgnoredTargetsWithSource(
+            context.functionName,
+            mappings,
+            sourceDataList,
+            additionalSourceParameters,
+            emptyList(),
+            targetData
+        )
+
+        val effectiveNonConstructorPropertiesMappingMode = determineUpdateMappingMode(targetData)
+
+        val targetProperties = obtainTargetNonConstructorProperties(
+            sourceProperties,
+            emptyList(),
+            targetData,
+            effectiveNonConstructorPropertiesMappingMode
+        )
+
+        val targetSetters = obtainTargetNonConstructorSetters(
+            targetProperties,
+            sourceProperties,
+            emptyList(),
+            targetData,
+            effectiveNonConstructorPropertiesMappingMode
+        )
+
+        verifyNoAmbiguousSource(sourceProperties, targetProperties.map { it.name } + targetSetters.map { it.name })
+
+        reportUnmappedUpdateTargets(
+            context,
+            targetData,
+            sourceProperties,
+            targetProperties.map { it.name } + targetSetters.map { it.name }
+        )
+
+        return MappingCodeGenerator(logger).generateUpdateCode(
+            context = context,
+            updateTarget = updateTarget,
+            sourceProperties = sourceProperties.sortedByDescending { it.isBasedOnAnnotation },
+            targetProperties = targetProperties.map { it.property },
+            targetSetters = targetSetters.toList(),
+            additionalSourceParameters = additionalSourceParameters,
+            replaceableContent = { ReplaceableContent.of(it, resolver) }
+        )
+    }
+
+    /**
+     * An assignable property of the existing instance that is neither written nor excluded with `ignore = true` silently
+     * keeps its value, which [UnmappedTargetPolicy] reports as for a constructor parameter.
+     */
+    private fun reportUnmappedUpdateTargets(
+        context: MappingContext,
+        targetData: TargetDataExtractionStrategy.TargetData,
+        sourceProperties: List<PropertyMappingInfo>,
+        writtenTargetNames: List<String>
+    ) {
+        val policy = Configuration.unmappedTargetPolicy
+        if (policy == UnmappedTargetPolicy.IGNORE) return
+
+        val ignoredTargetNames = sourceProperties.filter { it.ignore }.map { it.targetName }.toSet()
+        val unmapped = (targetData.varProperties.map { it.name } + targetData.setter.map { it.name })
+            .distinct()
+            .filter { it !in writtenTargetNames && it !in ignoredTargetNames }
+        if (unmapped.isEmpty()) return
+
+        if (policy == UnmappedTargetPolicy.ERROR) {
+            throw UnmappedTargetException(context.targetClassDeclaration, unmapped)
+        }
+        unmapped.forEach {
+            logger.warn(
+                "No source for the target property '$it' of ${context.targetClassDeclaration.qualifiedName?.asString()}, " +
+                    "${context.functionName} leaves it unchanged",
+                context.targetClassDeclaration
+            )
+        }
+    }
+
+    /**
+     * Every property of an existing instance is a non-constructor property, so [NonConstructorPropertiesMapping.AUTO]
+     * resolves to [NonConstructorPropertiesMapping.IMPLICIT]: a single [Mapping] must not drop all implicit matches.
+     */
+    private fun determineUpdateMappingMode(targetData: TargetDataExtractionStrategy.TargetData): NonConstructorPropertiesMapping {
+        return when (val value = Configuration.nonConstructorPropertiesMapping) {
+            NonConstructorPropertiesMapping.AUTO -> NonConstructorPropertiesMapping.IMPLICIT.also {
+                logger.logging("${NON_CONSTRUCTOR_PROPERTIES_MAPPING_OPTION.key} resolved to: $it", targetData.classDeclaration)
+            }
+
+            NonConstructorPropertiesMapping.IMPLICIT,
+            NonConstructorPropertiesMapping.EXPLICIT,
+            NonConstructorPropertiesMapping.ALL -> value
+        }
     }
 
     private fun verifyTargetExists(

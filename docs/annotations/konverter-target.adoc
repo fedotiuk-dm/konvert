@@ -1,0 +1,98 @@
+:page-title: @Konverter.Target
+:page-parent: @Konverter
+:page-grand_parent: Annotations
+
+= @Konverter.Target
+
+The annotation `@Konverter.Target` is only being processed in abstract functions in interfaces annotated with xref:konverter.adoc[`@Konverter`].
+
+It marks the parameter holding an existing instance to map into, instead of constructing a new one
+(the equivalent of MapStruct's `@MappingTarget`).
+
+[source,kotlin]
+----
+@Konverter
+interface TierMapper {
+    fun update(@Konverter.Source request: UpdateTierRequest, @Konverter.Target entity: TierEntity)
+}
+
+class UpdateTierRequest(val name: String, val level: Int?)
+class TierEntity(val id: Long) {
+    var name: String = ""
+    var level: Int? = null
+}
+----
+
+This will generate
+
+[source,kotlin]
+----
+object TierMapperImpl : TierMapper {
+  override fun update(request: UpdateTierRequest, entity: TierEntity) {
+    entity.name = request.name
+    entity.level = request.level
+  }
+}
+----
+
+== Rules
+
+* The function returns `Unit`, or the type of the target parameter: then the given instance itself is returned.
+* The target parameter must not be nullable. A nullable source parameter leaves the target untouched when it is `null`.
+* With exactly one other parameter, that one is the source and needs no `@Konverter.Source`. Further parameters are mapped
+  to the same named target properties as they are, as in every `@Konverter` function.
+* No constructor is called, so only assignable target properties are written:
+** a `var`, or a Java setter
+** a `val` holding a non-null mutable collection or map (`MutableList`, `MutableSet`, `MutableMap`, ...): its content is
+   replaced with `clear()` and `addAll`/`putAll`. A value that is that very instance is left alone.
+* A `var` collection is assigned a new collection, converted as in every other mapping.
+* A target property without a source keeps its value. A `val` property or a constructor parameter that a source property
+  matches by name is skipped, but naming it as `target` of a `@Mapping` fails the build.
+* `@Mapping` works as in a constructing mapping (`source` renames, `ignore`, `constant`, `expression`), and so do type
+  converters, e.g. enum to enum, or another `@Konverter` function for a nested object, which assigns a newly mapped instance.
+* `konvert.non-constructor-properties-mapping` resolves `auto` to `implicit`, as every property of an existing instance is a
+  non-constructor property: a single `@Mapping` does not switch off the matching of all other properties by name.
+  `explicit` and `all` apply as configured.
+* Such a function is not used as a type converter by other mappings, as the caller has to supply the target instance.
+* Several parameters annotated with xref:konverter-source.adoc[`@Konverter.Source`] map into one target instance as they map
+  into a constructed one: a property found in several sources must be decided with a `@Mapping`.
+* `konvert.unmapped-target-policy` reports an assignable target property that keeps its value because nothing maps it, and
+  `konvert.ignored-target-policy` an ignored one a source would map to.
+
+== Null values
+
+The option `konvert.update-null-strategy` decides what a `null` source value does:
+
+* `set` (default): the target property is assigned whatever the source has, including `null` into a nullable property.
+  A nullable source for a non-null property needs `konvert.enforce-not-null`, as in every other mapping.
+* `ignore`: a `null` source value leaves the target property untouched (PATCH semantics). This also makes a nullable
+  source compile for a non-null target property. It applies to values read from source properties and to further
+  parameters, not to `constant` or `expression` mappings, which are assigned as written.
+
+[source,kotlin]
+----
+@Konverter
+interface TierMapper {
+    @Konvert(options = [Konfig(key = "konvert.update-null-strategy", value = "ignore")])
+    fun patch(@Konverter.Source request: PatchTierRequest, @Konverter.Target entity: TierEntity): TierEntity
+}
+
+class PatchTierRequest(val name: String?, val level: Int?)
+----
+
+This will generate
+
+[source,kotlin]
+----
+object TierMapperImpl : TierMapper {
+  override fun patch(request: PatchTierRequest, entity: TierEntity): TierEntity {
+    request.name?.let {
+      entity.name = it
+    }
+    request.level?.let {
+      entity.level = it
+    }
+    return entity
+  }
+}
+----

@@ -12,7 +12,11 @@ All notable changes to this project will be documented in this file.
    * target properties are matched by name against the properties of all sources; a property found in several sources is a compile error unless a `@Mapping` decides it
    * `Mapping.source` may be qualified by the parameter name and navigate nested properties, e.g. `Mapping(target = "city", source = "entity.customer.address.city")`, reading null-safely after a nullable step
    * source properties are converted with the registered type converters, nullable source parameters are read with `?.`
-
+* map into an existing instance with a parameter annotated with `@Konverter.Target`, returning `Unit` or that instance [#119](https://github.com/mcarleio/konvert/issues/119)
+   * assigns every mapped `var` and Java setter in place; a `val` holding a non-null mutable collection or map gets its content replaced
+   * mapping a read-only target property explicitly fails the build, an implicit match is skipped
+   * new option `konvert.update-null-strategy`: `SET` (default) assigns `null` values, `IGNORE` leaves a target property untouched when its source value is `null`
+   * several `@Konverter.Source` parameters map into one `@Konverter.Target` instance; `konvert.unmapped-target-policy` and `konvert.ignored-target-policy` report its properties as they report constructor parameters
 
 ## [4.5.1]
 

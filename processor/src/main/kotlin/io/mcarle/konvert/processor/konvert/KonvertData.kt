@@ -27,7 +27,16 @@ class KonvertData constructor(
      * The parameters to map from: the single parameter, or every parameter annotated with `@Konverter.Source`
      */
     val sourceParameters: List<KSValueParameter>,
-    val additionalParameters: List<KSValueParameter>
+    val additionalParameters: List<KSValueParameter>,
+    /**
+     * The parameter annotated with `@Konverter.Target` holding the instance to map into, `null` when a new instance is
+     * constructed and returned
+     */
+    val targetParameter: KSValueParameter? = null,
+    /**
+     * Only with a [targetParameter]: whether the function returns the target instance instead of `Unit`
+     */
+    val returnsTarget: Boolean = false,
 ) {
 
     val sourceType: KSType = sourceTypeReference.resolve()
@@ -41,6 +50,12 @@ class KonvertData constructor(
      * A function with several sources cannot be called with a single value, so it is not offered as a type converter
      */
     val hasMultipleSources: Boolean = sourceParameters.size > 1
+
+    /**
+     * Maps into the existing instance of [targetParameter]. As the caller supplies that instance, such a function is
+     * not offered as a type converter.
+     */
+    val isUpdate: Boolean = targetParameter != null
 
     val priority = annotationData.priority
 
