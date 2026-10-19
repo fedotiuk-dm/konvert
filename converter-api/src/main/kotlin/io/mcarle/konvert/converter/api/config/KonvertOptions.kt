@@ -177,3 +177,23 @@ object UNMAPPED_TARGET_POLICY_OPTION : Option<UnmappedTargetPolicy>(
     key = "konvert.unmapped-target-policy",
     defaultValue = UnmappedTargetPolicy.IGNORE
 )
+
+/**
+ * Controls how Konvert reacts to a target excluded with `@Mapping(target = "...", ignore = true)` that a source property
+ * or a parameter of the mapping function would map to by name. Such an ignore silently drops a value the source provides,
+ * e.g. after the source gained the property.
+ *
+ * A source property that another mapping of the same function uses as its `source` is not considered.
+ *
+ * Possible values:
+ * - "ignore" (default)
+ * - "warn"
+ * - "error"
+ *
+ * @see IgnoredTargetPolicy
+ * @since 4.6.0
+ */
+object IGNORED_TARGET_POLICY_OPTION : Option<IgnoredTargetPolicy>(
+    key = "konvert.ignored-target-policy",
+    defaultValue = IgnoredTargetPolicy.IGNORE
+)

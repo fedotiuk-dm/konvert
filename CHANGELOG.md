@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### New features
 * New option `konvert.unmapped-target-policy` (`ignore`, `warn`, `error`) to report a target constructor parameter that no source property and no mapping provides, instead of silently leaving it to its default value
 * `@Konverter` functions map sealed hierarchies: if source and target are sealed, an exhaustive `when` pairs the subclasses through a declared converter or by their simple name [#216](https://github.com/mcarleio/konvert/issues/216)
+* New option `konvert.ignored-target-policy` (`ignore`, `warn`, `error`) to report a target excluded with `@Mapping(ignore = true)` that a source property or parameter would map to by name, instead of silently dropping its value
 
 
 ## [4.5.1]

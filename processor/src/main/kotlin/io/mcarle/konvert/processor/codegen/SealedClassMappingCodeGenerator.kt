@@ -141,6 +141,7 @@ class SealedClassMappingCodeGenerator(
                                 target = targetType,
                                 paramName = context.paramName,
                                 targetClassImportName = null,
+                                functionName = context.functionName,
                                 asExpression = true,
                             ),
                             visibilityContext = visibilityContext,

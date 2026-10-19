@@ -131,6 +131,7 @@ object KonverterCodeGenerator {
             target = konvertData.targetType,
             paramName = konvertData.paramName,
             targetClassImportName = targetClassImportName,
+            functionName = konvertData.mapKSFunctionDeclaration.qualifiedName?.asString() ?: konvertData.mapFunctionName,
         )
         val visibilityContext = MappingVisibilityContext.Declaration(konvertData.mapKSFunctionDeclaration)
         val sealedMapper = SealedClassMappingCodeGenerator(mapper)
