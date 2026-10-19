@@ -19,6 +19,10 @@ All notable changes to this project will be documented in this file.
    * per function with `@Konverter.Target(nulls = NullStrategy.SET | IGNORE)`, which takes precedence over `Konfig` and the global option (`NullStrategy.DEFAULT` uses them)
    * several `@Konverter.Source` parameters map into one `@Konverter.Target` instance; `konvert.unmapped-target-policy` and `konvert.ignored-target-policy` report its properties as they report constructor parameters
 
+### Bug fixes
+* a target's `var` whose setter is private, protected or internal to another module is no longer assigned from a same-named source property (the generated code did not compile), neither when created nor as a `@Konverter.Target` instance, nor reported by `konvert.ignored-target-policy`; an explicit `@Mapping` onto it fails with `NotAssignableTargetException`
+
+
 ## [4.5.1]
 
 ### Bug fixes

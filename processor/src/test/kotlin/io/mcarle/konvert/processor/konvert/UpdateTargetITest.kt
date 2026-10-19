@@ -21,6 +21,7 @@ import org.jetbrains.kotlin.compiler.plugin.ExperimentalCompilerApi
 import org.junit.jupiter.api.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCompilerApi::class)
@@ -831,6 +832,49 @@ interface Mapper {
             )
         )
 
+        assertContains(result.messages, NotAssignableTargetException::class.qualifiedName!!)
+        assertContains(result.messages, "`id`")
+    }
+
+    @Test
+    fun `a var with a non-public setter is skipped, and mapping it explicitly is not assignable`() {
+        val code = { mapping: String ->
+            SourceFile.kotlin(
+                name = "TestCode.kt",
+                contents =
+                    """
+import io.mcarle.konvert.api.Konvert
+import io.mcarle.konvert.api.Konverter
+import io.mcarle.konvert.api.Mapping
+
+class Source(val id: Long, val name: String)
+abstract class BaseEntity {
+    var id: Long? = null
+        protected set
+}
+class Target : BaseEntity() {
+    var name: String = ""
+}
+
+@Konverter
+interface Mapper {
+    $mapping
+    fun update(@Konverter.Source source: Source, @Konverter.Target target: Target)
+}
+                    """.trimIndent()
+            )
+        }
+
+        val (compilation) = compileWith(enabledConverters = listOf(SameTypeConverter()), code = code(""))
+        val generated = compilation.generatedSourceFor("MapperKonverter.kt")
+        assertContains(generated, "target.name = source.name")
+        assertFalse(generated.contains("target.id"))
+
+        val (_, result) = compileWith(
+            enabledConverters = listOf(SameTypeConverter()),
+            expectResultCode = KotlinCompilation.ExitCode.INTERNAL_ERROR,
+            code = code("@Konvert(mappings = [Mapping(source = \"id\", target = \"id\")])")
+        )
         assertContains(result.messages, NotAssignableTargetException::class.qualifiedName!!)
         assertContains(result.messages, "`id`")
     }

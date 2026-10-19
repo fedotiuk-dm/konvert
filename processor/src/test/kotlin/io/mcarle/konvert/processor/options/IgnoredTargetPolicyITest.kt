@@ -126,6 +126,40 @@ interface Mapper {
     }
 
     @Test
+    fun `an ignored var with a non-public setter is never reported`() {
+        val (_, result) = compileWith(
+            enabledConverters = listOf(SameTypeConverter()),
+            options = mapOf(IGNORED_TARGET_POLICY_OPTION.key to IgnoredTargetPolicy.ERROR.name),
+            code = SourceFile.kotlin(
+                name = "TestCode.kt",
+                contents =
+                    """
+import io.mcarle.konvert.api.Konverter
+import io.mcarle.konvert.api.Konvert
+import io.mcarle.konvert.api.Mapping
+
+class Source(val id: Long, val name: String)
+abstract class BaseEntity {
+    var id: Long? = null
+        protected set
+}
+class Entity : BaseEntity() {
+    var name: String = ""
+}
+
+@Konverter
+interface Mapper {
+    @Konvert(mappings = [Mapping(target = "id", ignore = true)])
+    fun toEntity(source: Source): Entity
+}
+                    """.trimIndent()
+            )
+        )
+
+        assertFalse(result.messages.contains("would map to"))
+    }
+
+    @Test
     fun `an ignored target whose same-named source cannot be converted is not reported`() {
         compileWith(
             enabledConverters = listOf(SameTypeConverter()),

@@ -91,6 +91,8 @@ class CodeGenerator constructor(
             targetData
         )
 
+        verifyMappedTargetsAssignable(mappings, constructorParameters, targetData)
+
         val effectiveNonConstructorPropertiesMappingMode = determineNonConstructorPropertiesMappingMode(
             targetData,
             sourceProperties
@@ -211,6 +213,8 @@ class CodeGenerator constructor(
 
         verifyTargetExists(mappings, emptyList(), targetData.varProperties, targetData.setter)
 
+        verifyMappedTargetsAssignable(mappings, emptyList(), targetData)
+
         reportIgnoredTargetsWithSource(
             context.functionName,
             mappings,
@@ -307,6 +311,26 @@ class CodeGenerator constructor(
         return (targetData.varProperties.filter { it.hasAccessibleSetter() }.map { it.name } + targetData.setter.map { it.name })
             .distinct()
             .filter { it !in writtenNames && it !in ignoredNames }
+    }
+
+    /**
+     * An explicit mapping onto a `var` whose setter the generated code cannot call would never be written.
+     */
+    private fun verifyMappedTargetsAssignable(
+        mappings: List<Mapping>,
+        constructorParameters: List<KSValueParameter>,
+        targetData: TargetDataExtractionStrategy.TargetData
+    ) {
+        val parameterNames = constructorParameters.mapNotNull { it.name?.asString() }
+        val setterNames = targetData.setter.map { it.name }
+        val notAssignableNames = targetData.varProperties
+            .filterNot { it.hasAccessibleSetter() }
+            .map { it.name }
+            .filter { it !in parameterNames && it !in setterNames }
+        val notAssignableMappings = mappings.filter { !it.ignore && it.target in notAssignableNames }
+        if (notAssignableMappings.isNotEmpty()) {
+            throw NotAssignableTargetException(notAssignableMappings.map { it.target })
+        }
     }
 
     /**
@@ -439,7 +463,7 @@ class CodeGenerator constructor(
         targetData: TargetDataExtractionStrategy.TargetData
     ): KSTypeReference? {
         return constructorParameters.firstOrNull { it.name?.asString() == target }?.type
-            ?: targetData.varProperties.firstOrNull { it.name == target }?.property?.type
+            ?: targetData.varProperties.firstOrNull { it.name == target && it.hasAccessibleSetter() }?.property?.type
             ?: targetData.setter.firstOrNull { it.name == target }?.typeRef
     }
 
@@ -488,6 +512,7 @@ class CodeGenerator constructor(
     ): Set<TargetDataExtractionStrategy.TargetVarProperty> {
 
         val remainingProperties = targetData.varProperties
+            .filter { it.hasAccessibleSetter() }
             .filter { variable ->
                 variable.name !in constructorParameters.mapNotNull { it.name?.asString() }
             }
