@@ -282,4 +282,39 @@ interface Mapper {
         assertFalse(result.messages.contains("Mapper.toTargetKnowingly ignores"))
         assertContains(result.messages, "Mapper.toTarget ignores target(s) that a source would map to: 'note' from the source property 'note'")
     }
+
+    @Test
+    fun `an ignored property of an existing instance the source provides is reported`() {
+        val (_, result) = compileWith(
+            enabledConverters = listOf(SameTypeConverter()),
+            expectResultCode = KotlinCompilation.ExitCode.INTERNAL_ERROR,
+            options = mapOf(IGNORED_TARGET_POLICY_OPTION.key to IgnoredTargetPolicy.ERROR.name),
+            code = SourceFile.kotlin(
+                name = "TestCode.kt",
+                contents =
+                    """
+import io.mcarle.konvert.api.Konverter
+import io.mcarle.konvert.api.Konvert
+import io.mcarle.konvert.api.Mapping
+
+class Source(val name: String, val note: String?)
+class Target {
+    var name: String = ""
+    var note: String? = null
+}
+
+@Konverter
+interface Mapper {
+    @Konvert(mappings = [Mapping(target = "note", ignore = true)])
+    fun update(@Konverter.Source source: Source, @Konverter.Target target: Target)
+}
+                    """.trimIndent()
+            )
+        )
+
+        assertContains(
+            result.messages,
+            "Mapper.update ignores target(s) that a source would map to: 'note' from the source property 'note'"
+        )
+    }
 }

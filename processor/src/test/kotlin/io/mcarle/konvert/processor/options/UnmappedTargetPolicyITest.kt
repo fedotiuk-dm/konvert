@@ -144,4 +144,53 @@ interface Mapper {
             compilation.generatedSourceFor("MapperKonverter.kt")
         )
     }
+
+    private val unmappedUpdateTarget = SourceFile.kotlin(
+        name = "TestCode.kt",
+        contents =
+            """
+import io.mcarle.konvert.api.Konverter
+import io.mcarle.konvert.api.Konvert
+import io.mcarle.konvert.api.Mapping
+
+class Source(val name: String)
+class Target(val id: String) {
+    var name: String = ""
+    var note: String? = null
+    var tag: String = "none"
+}
+
+@Konverter
+interface Mapper {
+    @Konvert(mappings = [Mapping(target = "tag", ignore = true)])
+    fun update(@Konverter.Source source: Source, @Konverter.Target target: Target)
+}
+            """.trimIndent()
+    )
+
+    @Test
+    fun `warn reports every property of an existing instance left unchanged`() {
+        val (compilation, result) = compileWith(
+            enabledConverters = listOf(SameTypeConverter()),
+            options = mapOf(UNMAPPED_TARGET_POLICY_OPTION.key to UnmappedTargetPolicy.WARN.name),
+            code = unmappedUpdateTarget
+        )
+
+        assertContains(result.messages, "No source for the target property 'note' of Target, Mapper.update leaves it unchanged")
+        assertFalse(result.messages.contains("target property 'tag'"))
+        assertFalse(result.messages.contains("target property 'id'"))
+        assertContains(compilation.generatedSourceFor("MapperKonverter.kt"), "target.name = source.name")
+    }
+
+    @Test
+    fun `error fails naming every property of an existing instance left unchanged`() {
+        val (_, result) = compileWith(
+            enabledConverters = listOf(SameTypeConverter()),
+            expectResultCode = KotlinCompilation.ExitCode.INTERNAL_ERROR,
+            options = mapOf(UNMAPPED_TARGET_POLICY_OPTION.key to UnmappedTargetPolicy.ERROR.name),
+            code = unmappedUpdateTarget
+        )
+
+        assertContains(result.messages, "No source for the target parameter(s) [note] of Target")
+    }
 }

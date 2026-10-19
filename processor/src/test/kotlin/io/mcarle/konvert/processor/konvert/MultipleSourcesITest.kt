@@ -8,6 +8,8 @@ import io.mcarle.konvert.converter.SameTypeConverter
 import io.mcarle.konvert.converter.api.TypeConverterRegistry
 import io.mcarle.konvert.converter.api.config.INVALID_MAPPING_STRATEGY_OPTION
 import io.mcarle.konvert.converter.api.config.InvalidMappingStrategy
+import io.mcarle.konvert.converter.api.config.UPDATE_NULL_STRATEGY_OPTION
+import io.mcarle.konvert.converter.api.config.UpdateNullStrategy
 import io.mcarle.konvert.processor.KonverterITest
 import io.mcarle.konvert.processor.generatedSourceFor
 import org.jetbrains.kotlin.compiler.plugin.ExperimentalCompilerApi
@@ -565,4 +567,89 @@ interface Mapper {
         )
     }
 
+    @Test
+    fun mapSeveralSourcesIntoAnExistingInstance() {
+        val (compilation) = compileWith(
+            enabledConverters = listOf(SameTypeConverter()),
+            options = mapOf(UPDATE_NULL_STRATEGY_OPTION.key to UpdateNullStrategy.IGNORE.name),
+            code = SourceFile.kotlin(
+                name = "TestCode.kt",
+                contents =
+                    """
+import io.mcarle.konvert.api.Konvert
+import io.mcarle.konvert.api.Konverter
+import io.mcarle.konvert.api.Mapping
+
+class Order(val total: Int, val note: String?)
+class Customer(val name: String, val email: String?)
+class Invoice {
+    val id: Long = 1
+    var total: Int = 0
+    var customerName: String = ""
+    var email: String? = null
+    var note: String? = null
+}
+
+@Konverter
+interface Mapper {
+    @Konvert(mappings = [Mapping(target = "customerName", source = "customer.name")])
+    fun update(@Konverter.Source order: Order, @Konverter.Source customer: Customer, @Konverter.Target invoice: Invoice): Invoice
+}
+                """.trimIndent()
+            )
+        )
+        val mapperCode = compilation.generatedSourceFor("MapperKonverter.kt")
+        println(mapperCode)
+
+        assertSourceEquals(
+            """
+            public object MapperImpl : Mapper {
+              override fun update(
+                order: Order,
+                customer: Customer,
+                invoice: Invoice,
+              ): Invoice {
+                invoice.total = order.total
+                invoice.customerName = customer.name
+                customer.email?.let {
+                  invoice.email = it
+                }
+                order.note?.let {
+                  invoice.note = it
+                }
+                return invoice
+              }
+            }
+            """.trimIndent(),
+            mapperCode
+        )
+    }
+
+    @Test
+    fun failOnPropertyFoundInTwoSourcesOfAnExistingInstance() {
+        val (_, compilationResult) = compileWith(
+            enabledConverters = listOf(SameTypeConverter()),
+            expectResultCode = KotlinCompilation.ExitCode.INTERNAL_ERROR,
+            code = SourceFile.kotlin(
+                name = "TestCode.kt",
+                contents =
+                    """
+import io.mcarle.konvert.api.Konverter
+
+class Order(val name: String)
+class Customer(val name: String)
+class Invoice {
+    var name: String = ""
+}
+
+@Konverter
+interface Mapper {
+    fun update(@Konverter.Source order: Order, @Konverter.Source customer: Customer, @Konverter.Target invoice: Invoice)
+}
+                """.trimIndent()
+            )
+        )
+
+        assertContains(compilationResult.messages, "The target 'name' matches several sources: [order.name, customer.name]")
+    }
 }
