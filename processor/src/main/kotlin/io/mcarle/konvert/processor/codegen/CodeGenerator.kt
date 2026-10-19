@@ -3,9 +3,12 @@ package io.mcarle.konvert.processor.codegen
 import com.google.devtools.ksp.processing.KSPLogger
 import com.google.devtools.ksp.processing.Resolver
 import com.google.devtools.ksp.symbol.KSClassDeclaration
+import com.google.devtools.ksp.symbol.KSFunctionDeclaration
 import com.google.devtools.ksp.symbol.KSType
 import com.google.devtools.ksp.symbol.KSTypeReference
 import com.google.devtools.ksp.symbol.KSValueParameter
+import com.google.devtools.ksp.symbol.Modifier
+import com.google.devtools.ksp.symbol.Origin
 import com.squareup.kotlinpoet.CodeBlock
 import io.mcarle.konvert.api.Mapping
 import io.mcarle.konvert.converter.api.TypeConverterRegistry
@@ -113,6 +116,13 @@ class CodeGenerator constructor(
             constructorParameters.mapNotNull { it.name?.asString() }
                 + variablesWithoutConstructorParameters.map { it.name }
                 + remainingSetters.map { it.name }
+        )
+
+        reportUnmappedTargets(
+            constructor,
+            sourceProperties,
+            targetData,
+            variablesWithoutConstructorParameters.map { it.name } + remainingSetters.map { it.name }
         )
 
         return MappingCodeGenerator(logger).generateMappingCode(
@@ -248,8 +258,72 @@ class CodeGenerator constructor(
     }
 
     /**
+     * A constructor parameter that no source property and no mapping provides silently takes its default value, or
+     * `null`. An assignable non-constructor property that is neither written nor excluded with `ignore = true` silently
+     * keeps the value the constructor gives it, whichever [NonConstructorPropertiesMapping] left it unwritten.
+     */
+    private fun reportUnmappedTargets(
+        constructor: KSFunctionDeclaration,
+        sourceProperties: List<PropertyMappingInfo>,
+        targetData: TargetDataExtractionStrategy.TargetData,
+        writtenNonConstructorNames: List<String>
+    ) {
+        val policy = Configuration.unmappedTargetPolicy
+        if (policy == UnmappedTargetPolicy.IGNORE) return
+
+        val parameterNames = constructor.parameters.mapNotNull { it.name?.asString() }
+        val unmappedParameters = parameterNames.filter { name -> sourceProperties.none { it.targetName == name } }
+        val unmappedProperties = unmappedAssignableProperties(targetData, sourceProperties, parameterNames + writtenNonConstructorNames)
+
+        if (unmappedParameters.isEmpty() && unmappedProperties.isEmpty()) return
+
+        val targetClass = targetData.classDeclaration
+        if (policy == UnmappedTargetPolicy.ERROR) {
+            throw UnmappedTargetException(targetClass, unmappedParameters, unmappedProperties)
+        }
+        unmappedParameters.forEach {
+            logger.warn(
+                "No source for the target parameter '$it' of ${targetClass.qualifiedName?.asString()}, its default value is used",
+                constructor
+            )
+        }
+        unmappedProperties.forEach {
+            logger.warn(
+                "No source for the target property '$it' of ${targetClass.qualifiedName?.asString()}, its initial value is kept",
+                targetClass
+            )
+        }
+    }
+
+    /**
+     * The assignable properties of [targetData] that are neither in [writtenNames] nor excluded with `ignore = true`
+     */
+    private fun unmappedAssignableProperties(
+        targetData: TargetDataExtractionStrategy.TargetData,
+        sourceProperties: List<PropertyMappingInfo>,
+        writtenNames: List<String>
+    ): List<String> {
+        val ignoredNames = sourceProperties.filter { it.ignore }.map { it.targetName }.toSet()
+        return (targetData.varProperties.filter { it.hasAccessibleSetter() }.map { it.name } + targetData.setter.map { it.name })
+            .distinct()
+            .filter { it !in writtenNames && it !in ignoredNames }
+    }
+
+    /**
+     * A `var` whose setter is private or protected, or internal to another module, cannot be written by the generated code.
+     */
+    private fun TargetDataExtractionStrategy.TargetVarProperty.hasAccessibleSetter(): Boolean {
+        val modifiers = property.setter?.modifiers ?: return true
+        return when {
+            Modifier.PRIVATE in modifiers || Modifier.PROTECTED in modifiers -> false
+            Modifier.INTERNAL in modifiers -> property.origin == Origin.KOTLIN
+            else -> true
+        }
+    }
+
+    /**
      * An assignable property of the existing instance that is neither written nor excluded with `ignore = true` silently
-     * keeps its value, which [UnmappedTargetPolicy] reports as for a constructor parameter.
+     * keeps its value, which [UnmappedTargetPolicy] reports as for a created target.
      */
     private fun reportUnmappedUpdateTargets(
         context: MappingContext,
@@ -260,14 +334,11 @@ class CodeGenerator constructor(
         val policy = Configuration.unmappedTargetPolicy
         if (policy == UnmappedTargetPolicy.IGNORE) return
 
-        val ignoredTargetNames = sourceProperties.filter { it.ignore }.map { it.targetName }.toSet()
-        val unmapped = (targetData.varProperties.map { it.name } + targetData.setter.map { it.name })
-            .distinct()
-            .filter { it !in writtenTargetNames && it !in ignoredTargetNames }
+        val unmapped = unmappedAssignableProperties(targetData, sourceProperties, writtenTargetNames)
         if (unmapped.isEmpty()) return
 
         if (policy == UnmappedTargetPolicy.ERROR) {
-            throw UnmappedTargetException(context.targetClassDeclaration, unmapped)
+            throw UnmappedTargetException(context.targetClassDeclaration, parameters = emptyList(), properties = unmapped)
         }
         unmapped.forEach {
             logger.warn(

@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### New features
-* New option `konvert.unmapped-target-policy` (`ignore`, `warn`, `error`) to report a target constructor parameter that no source property and no mapping provides, instead of silently leaving it to its default value
+* New option `konvert.unmapped-target-policy` (`ignore`, `warn`, `error`) to report a target constructor parameter or assignable non-constructor property (`var`, Java setter) that no source property and no mapping provides, instead of silently leaving it to its default or initial value
 * `@Konverter` functions map sealed hierarchies: if source and target are sealed, an exhaustive `when` pairs the subclasses through a declared converter or by their simple name [#216](https://github.com/mcarleio/konvert/issues/216)
 * New option `konvert.ignored-target-policy` (`ignore`, `warn`, `error`) to report a target excluded with `@Mapping(ignore = true)` that a source property or parameter would map to by name, instead of silently dropping its value
 * Map several sources into one target by annotating several parameters of a `@Konverter` function with `@Konverter.Source` [#71](https://github.com/mcarleio/konvert/issues/71)
@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
    * mapping a read-only target property explicitly fails the build, an implicit match is skipped
    * new option `konvert.update-null-strategy`: `SET` (default) assigns `null` values, `IGNORE` leaves a target property untouched when its source value is `null`
    * several `@Konverter.Source` parameters map into one `@Konverter.Target` instance; `konvert.unmapped-target-policy` and `konvert.ignored-target-policy` report its properties as they report constructor parameters
+
 
 ## [4.5.1]
 
