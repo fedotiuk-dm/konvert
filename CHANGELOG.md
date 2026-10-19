@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### New features
+* map into an existing instance with a parameter annotated with `@Konverter.Target`, returning `Unit` or that instance [#119](https://github.com/mcarleio/konvert/issues/119)
+   * assigns every mapped `var` and Java setter in place; a `val` holding a non-null mutable collection or map gets its content replaced
+   * mapping a read-only target property explicitly fails the build, an implicit match is skipped
+   * new option `konvert.update-null-strategy`: `SET` (default) assigns `null` values, `IGNORE` leaves a target property untouched when its source value is `null`
 
 ## [4.5.1]
 

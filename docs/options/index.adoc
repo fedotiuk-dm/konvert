@@ -328,6 +328,47 @@ class PersonMapperImpl: PersonMapper {
 ----
 ====
 
+a|`*konvert.update-null-strategy*`
+a|`set`, `ignore`
+a|`set`
+a|Decides what a `null` source value does in a function mapping into an existing instance (a parameter annotated with
+xref:../annotations/konverter-target.adoc[`@Konverter.Target`]).
+
+- `set` (default): the target property is assigned whatever the source has, including `null` into a nullable property.
+- `ignore`: a `null` source value leaves the target property untouched (PATCH semantics). Does not apply to `constant` and `expression` mappings.
+
+4+a|
+[.pl-6]
+.Example
+[%collapsible]
+====
+[source,kotlin]
+----
+@Konverter(options=[
+    Konfig(key="konvert.update-null-strategy", value="ignore")
+])
+interface PersonMapper {
+    fun patch(@Konverter.Source dto: PersonPatch, @Konverter.Target entity: PersonEntity)
+}
+
+class PersonPatch(val name: String?)
+class PersonEntity {
+    var name: String = ""
+}
+----
+Will generate:
+[source,kotlin]
+----
+object PersonMapperImpl: PersonMapper {
+    override fun patch(dto: PersonPatch, entity: PersonEntity) {
+        dto.name?.let {
+            entity.name = it
+        }
+    }
+}
+----
+====
+
 |===
 
 === Injector Options
