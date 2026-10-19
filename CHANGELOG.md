@@ -25,6 +25,7 @@ All notable changes to this project will be documented in this file.
 ### Bug fixes
 * a target's `var` whose setter is private, protected or internal to another module is no longer assigned from a same-named source property (the generated code did not compile), neither when created nor as a `@Konverter.Target` instance, nor reported by `konvert.ignored-target-policy`; an explicit `@Mapping` onto it fails with `NotAssignableTargetException`
 * a `@Konverter` function with additional parameters no longer short-circuits to a type converter that reads only the source: a same-type function such as `fun clone(@Konverter.Source e: E, name: String): E` constructs a new `E` instead of returning `e` and ignoring `name`
+* a `@Konverter` function with parameters beyond its single source, such as `fun toTier(@Konverter.Source request: Request, order: Int): Tier`, is no longer offered as a type converter for `Request -> Tier`: another mapping needing that pair generated `toTier(request = it)`, which did not compile, and now reports the pair as not convertible; `konvert.ignored-target-policy` no longer reports an ignored target only such a function would convert to
 
 
 ## [4.5.1]

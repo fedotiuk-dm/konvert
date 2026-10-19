@@ -18,7 +18,8 @@ class KonverterData constructor(
 
     override fun toTypeConverters(): List<AnnotatedConverter> {
         return withIsolatedConfiguration(annotationData.options) {
-            konvertData.filterNot { it.hasMultipleSources || it.isUpdate }.map {
+            // a function with parameters beyond its single source cannot be called with the one value a type converter passes
+            konvertData.filterNot { it.hasMultipleSources || it.isUpdate || it.additionalParameters.isNotEmpty() }.map {
                 KonvertTypeConverter(
                     priority = it.priority,
                     alreadyGenerated = false,

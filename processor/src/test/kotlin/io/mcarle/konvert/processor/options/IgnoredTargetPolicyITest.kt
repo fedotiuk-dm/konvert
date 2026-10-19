@@ -5,6 +5,8 @@ import com.tschuchort.compiletesting.SourceFile
 import io.mcarle.konvert.converter.SameTypeConverter
 import io.mcarle.konvert.converter.api.config.IGNORED_TARGET_POLICY_OPTION
 import io.mcarle.konvert.converter.api.config.IgnoredTargetPolicy
+import io.mcarle.konvert.converter.api.config.UNMAPPED_TARGET_POLICY_OPTION
+import io.mcarle.konvert.converter.api.config.UnmappedTargetPolicy
 import io.mcarle.konvert.processor.KonverterITest
 import io.mcarle.konvert.processor.generatedSourceFor
 import org.jetbrains.kotlin.compiler.plugin.ExperimentalCompilerApi
@@ -178,6 +180,39 @@ class Target(val id: String, val note: String? = null)
 @Konverter
 interface Mapper {
     @Konvert(mappings = [Mapping(target = "note", ignore = true)])
+    fun toTarget(source: Source): Target
+}
+                    """.trimIndent()
+            )
+        )
+    }
+
+    @Test
+    fun `an ignored target only a konverter with additional parameters converts to is not reported`() {
+        compileWith(
+            enabledConverters = listOf(SameTypeConverter()),
+            options = mapOf(
+                IGNORED_TARGET_POLICY_OPTION.key to IgnoredTargetPolicy.ERROR.name,
+                UNMAPPED_TARGET_POLICY_OPTION.key to UnmappedTargetPolicy.ERROR.name
+            ),
+            code = SourceFile.kotlin(
+                name = "TestCode.kt",
+                contents =
+                    """
+import io.mcarle.konvert.api.Konverter
+import io.mcarle.konvert.api.Konvert
+import io.mcarle.konvert.api.Mapping
+
+class Request(val name: String)
+class Tier(val name: String, val order: Int)
+class Source(val id: String, val tier: Request)
+class Target(val id: String, val tier: Tier? = null)
+
+@Konverter
+interface Mapper {
+    fun toTier(@Konverter.Source request: Request, order: Int): Tier
+
+    @Konvert(mappings = [Mapping(target = "tier", ignore = true)])
     fun toTarget(source: Source): Target
 }
                     """.trimIndent()
