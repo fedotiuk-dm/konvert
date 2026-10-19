@@ -332,7 +332,8 @@ a|`*konvert.update-null-strategy*`
 a|`set`, `ignore`
 a|`set`
 a|Decides what a `null` source value does in a function mapping into an existing instance (a parameter annotated with
-xref:../annotations/konverter-target.adoc[`@Konverter.Target`]).
+xref:../annotations/konverter-target.adoc[`@Konverter.Target`]), unless that parameter names it per function with
+`@Konverter.Target(nulls = NullStrategy.SET)` or `NullStrategy.IGNORE`, which takes precedence over every `Konfig`.
 
 - `set` (default): the target property is assigned whatever the source has, including `null` into a nullable property.
 - `ignore`: a `null` source value leaves the target property untouched (PATCH semantics). Does not apply to `constant` and `expression` mappings.

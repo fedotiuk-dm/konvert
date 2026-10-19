@@ -57,7 +57,17 @@ object TierMapperImpl : TierMapper {
 
 == Null values
 
-The option `konvert.update-null-strategy` decides what a `null` source value does:
+Whether a `null` source value clears or keeps a target property is a property of each function: a PATCH request keeps
+what it does not send, writing a validated full value clears what is `null`. It is decided, in this order, by:
+
+. the attribute `nulls` of `@Konverter.Target`: `NullStrategy.SET` or `NullStrategy.IGNORE`. The default
+  `NullStrategy.DEFAULT` falls through to the option;
+. the option `konvert.update-null-strategy` given with `Konfig` on the function's `@Konvert`, then on the `@Konverter`
+  interface;
+. the option given globally to the processor;
+. `set`.
+
+The two strategies:
 
 * `set` (default): the target property is assigned whatever the source has, including `null` into a nullable property.
   A nullable source for a non-null property needs `konvert.enforce-not-null`, as in every other mapping.
@@ -69,8 +79,10 @@ The option `konvert.update-null-strategy` decides what a `null` source value doe
 ----
 @Konverter
 interface TierMapper {
-    @Konvert(options = [Konfig(key = "konvert.update-null-strategy", value = "ignore")])
-    fun patch(@Konverter.Source request: PatchTierRequest, @Konverter.Target entity: TierEntity): TierEntity
+    fun patch(
+        @Konverter.Source request: PatchTierRequest,
+        @Konverter.Target(nulls = NullStrategy.IGNORE) entity: TierEntity
+    ): TierEntity
 }
 
 class PatchTierRequest(val name: String?, val level: Int?)

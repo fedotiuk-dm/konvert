@@ -4,6 +4,7 @@ import com.google.devtools.ksp.getClassDeclarationByName
 import com.google.devtools.ksp.processing.Resolver
 import com.google.devtools.ksp.symbol.KSPropertyDeclaration
 import com.google.devtools.ksp.symbol.KSType
+import io.mcarle.konvert.converter.api.config.UpdateNullStrategy
 
 /**
  * The existing instance a `@Konverter` function maps into, given by its parameter annotated with `@Konverter.Target`.
@@ -14,6 +15,10 @@ data class UpdateTarget constructor(
      * Whether the function returns the target instance instead of `Unit`
      */
     val returnsTarget: Boolean,
+    /**
+     * What a `null` source value does, resolved from `@Konverter.Target(nulls = ...)`, else `konvert.update-null-strategy`
+     */
+    val nullStrategy: UpdateNullStrategy,
 )
 
 /**

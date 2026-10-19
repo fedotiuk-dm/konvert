@@ -48,11 +48,18 @@ annotation class Konverter(
      * }
      * ```
      *
-     * Whether a `null` source value overwrites the target property is decided by the option `konvert.update-null-strategy`.
+     * Whether a `null` source value overwrites the target property is decided by [nulls], which defaults to the option
+     * `konvert.update-null-strategy`.
      */
     @Retention(AnnotationRetention.RUNTIME)
     @kotlin.annotation.Target(AnnotationTarget.VALUE_PARAMETER)
-    annotation class Target
+    annotation class Target(
+        /**
+         * What a `null` source value does in this function: [NullStrategy.SET] assigns it, [NullStrategy.IGNORE] leaves
+         * the target property untouched. [NullStrategy.DEFAULT] uses the option `konvert.update-null-strategy`.
+         */
+        val nulls: NullStrategy = NullStrategy.DEFAULT
+    )
 
     /**
      * This object can be used to load the generated class of an interface, which is annotated with `@Konverter`.
